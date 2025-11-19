@@ -1,0 +1,4 @@
+Handle,Title,SKU,Option1 Name,Option1 Value,Option2 Name,Option2 Value,Option3 Name,Option3 Value,COO,HS Code, HS Code / CA, HS Code / FR
+t-shirt-red,Red T-Shirt,SKU12345,Size,Medium,Color,Red,,,"US",6205.20, 6205.20.0000, 6205.20.0001
+t-shirt-blue,Blue T-Shirt,SKU12346,Size,Large,Color,Blue,,,"US",6205.20, 6205.20.0000, 6205.20.0001
+hoodie-black,Black Hoodie,SKU12347,Size,Small,Color,Black,,,"US",6201.92, 6205.20.0000, 6205.20.0001
