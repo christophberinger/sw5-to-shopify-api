@@ -461,8 +461,9 @@ class ShopifyClient:
             "variants[].inventory_policy": "Inventory policy",
             "variants[].taxable": "Whether product is taxable",
             "variants[].requires_shipping": "Whether product requires shipping",
-            "variants[].harmonized_system_code": "HS Code / Zolltarifnummer",
+            "variants[].harmonized_system_code": "HS Code / Zolltarifnummer (deprecated - use harmonized_system_codes[] instead)",
             "variants[].country_code_of_origin": "Country code of origin (ISO 3166-1 alpha-2)",
+            "harmonized_system_codes[]": "HS Codes (Harmonized System Codes). Supports: simple string '123456', JSON array of strings '[\"123456\", \"654321\"]', or JSON array with country codes '[{\"harmonizedSystemCode\": \"123456\", \"countryCode\": \"DE\"}]'",
             "images[].src": "Image URL",
             "images[].alt": "Image alt text",
             "options[].name": "Option name (e.g., Size, Color)",
@@ -481,6 +482,15 @@ class ShopifyClient:
         try:
             # Extract fields from real products
             fields = self._extract_fields_from_products(product_identifier)
+
+            # Add harmonized_system_codes field (not automatically extracted from products)
+            fields.append({
+                "path": "harmonized_system_codes[]",
+                "type": "array",
+                "required": False,
+                "description": self._get_field_description("harmonized_system_codes[]"),
+                "sample_value": '[{"harmonizedSystemCode": "123456", "countryCode": "DE"}]'
+            })
 
             # Add custom metafields from store (enriched with values from specified product if available)
             metafield_defs = self.get_metafield_definitions(product_identifier=product_identifier)
@@ -575,4 +585,118 @@ class ShopifyClient:
 
         except Exception as e:
             print(f"Error finding product by SKU {sku}: {e}")
+            return None
+
+    def update_inventory_item_harmonized_codes(
+        self,
+        inventory_item_id: str,
+        harmonized_codes: List[Dict[str, Optional[str]]]
+    ) -> Dict:
+        """
+        Update harmonized system codes for an inventory item using GraphQL
+
+        Args:
+            inventory_item_id: The GraphQL ID of the inventory item (gid://shopify/InventoryItem/...)
+            harmonized_codes: List of dicts with 'harmonizedSystemCode' and optional 'countryCode'
+                             Example: [
+                                 {"harmonizedSystemCode": "123456", "countryCode": "DE"},
+                                 {"harmonizedSystemCode": "654321", "countryCode": None}  # Global HS code
+                             ]
+
+        Returns:
+            GraphQL response dict
+        """
+        try:
+            # Build the countryHarmonizedSystemCodes input array
+            codes_input = []
+            for code in harmonized_codes:
+                code_input = {
+                    "harmonizedSystemCode": code.get("harmonizedSystemCode")
+                }
+                # Only add countryCode if it's explicitly provided (can be null for global codes)
+                if "countryCode" in code:
+                    code_input["countryCode"] = code.get("countryCode")
+                codes_input.append(code_input)
+
+            mutation = """
+            mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
+                inventoryItemUpdate(id: $id, input: $input) {
+                    inventoryItem {
+                        id
+                        countryHarmonizedSystemCodes {
+                            edges {
+                                node {
+                                    harmonizedSystemCode
+                                    countryCode
+                                }
+                            }
+                        }
+                    }
+                    userErrors {
+                        field
+                        message
+                    }
+                }
+            }
+            """
+
+            variables = {
+                "id": inventory_item_id,
+                "input": {
+                    "countryHarmonizedSystemCodes": codes_input
+                }
+            }
+
+            result = self._make_graphql_request(mutation, variables)
+
+            # Check for errors
+            if 'errors' in result:
+                error_msgs = [e.get('message', str(e)) for e in result['errors']]
+                raise Exception(f"GraphQL errors: {', '.join(error_msgs)}")
+
+            user_errors = result.get('data', {}).get('inventoryItemUpdate', {}).get('userErrors', [])
+            if user_errors:
+                error_msgs = [f"{e.get('field', 'unknown')}: {e.get('message', 'unknown')}" for e in user_errors]
+                raise Exception(f"User errors updating inventory item: {', '.join(error_msgs)}")
+
+            return result
+
+        except Exception as e:
+            print(f"Error updating inventory item harmonized codes: {e}")
+            raise
+
+    def get_inventory_item_id_from_variant(self, variant_id: int) -> Optional[str]:
+        """
+        Get the inventory item GraphQL ID from a variant ID
+
+        Args:
+            variant_id: The REST API variant ID (numeric)
+
+        Returns:
+            The GraphQL inventory item ID (gid://shopify/InventoryItem/...)
+        """
+        try:
+            variant_gid = f"gid://shopify/ProductVariant/{variant_id}"
+
+            query = """
+            query getInventoryItem($id: ID!) {
+                productVariant(id: $id) {
+                    id
+                    inventoryItem {
+                        id
+                    }
+                }
+            }
+            """
+
+            result = self._make_graphql_request(query, {"id": variant_gid})
+
+            if 'errors' in result:
+                return None
+
+            inventory_item = result.get('data', {}).get('productVariant', {}).get('inventoryItem', {})
+            return inventory_item.get('id')
+
+        except Exception as e:
+            print(f"Error getting inventory item ID for variant {variant_id}: {e}")
             return None

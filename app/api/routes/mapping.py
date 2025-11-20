@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Body
-from typing import Dict, List, Any, Union
+from typing import Dict, List, Any, Union, Optional
 from pydantic import BaseModel
+import json
 from clients.shopware5_client import Shopware5Client
 from clients.shopify_client import ShopifyClient
 from utils.transformations import apply_transformation
@@ -279,6 +280,52 @@ async def sync_products(request: ProductSyncRequest):
                         result = shopify_client.create_product(shopify_product)
                         status = "created"
                         print(f"✓ Created product with ID: {result.get('product', {}).get('id')}")
+
+                # Update harmonized system codes if present
+                hs_codes = shopify_product.get('_harmonized_system_codes', [])
+                if hs_codes:
+                    print(f"\n=== UPDATING HS CODES ===")
+                    print(f"Found {len(hs_codes)} HS code entries to update")
+
+                    # Get the variant ID from the result
+                    product_data = result.get('product', {})
+                    variants = product_data.get('variants', [])
+
+                    if variants and len(variants) > 0:
+                        variant_id = variants[0].get('id')
+                        if variant_id:
+                            try:
+                                # Get inventory item ID
+                                inventory_item_id = shopify_client.get_inventory_item_id_from_variant(variant_id)
+
+                                if inventory_item_id:
+                                    print(f"Inventory Item ID: {inventory_item_id}")
+
+                                    # Update HS codes
+                                    hs_result = shopify_client.update_inventory_item_harmonized_codes(
+                                        inventory_item_id,
+                                        hs_codes
+                                    )
+
+                                    # Extract HS codes from GraphQL response (edges/node structure)
+                                    hs_codes_connection = hs_result.get('data', {}).get('inventoryItemUpdate', {}).get('inventoryItem', {}).get('countryHarmonizedSystemCodes', {})
+                                    updated_codes_edges = hs_codes_connection.get('edges', [])
+                                    updated_codes = [edge.get('node', {}) for edge in updated_codes_edges]
+
+                                    print(f"✓ Updated {len(updated_codes)} HS codes")
+                                    for code in updated_codes:
+                                        country = code.get('countryCode') or 'Global'
+                                        print(f"  - {country}: {code.get('harmonizedSystemCode')}")
+                                else:
+                                    print(f"⚠️  Could not get inventory item ID for variant {variant_id}")
+                            except Exception as e:
+                                print(f"⚠️  Error updating HS codes: {e}")
+                        else:
+                            print(f"⚠️  No variant ID found in result")
+                    else:
+                        print(f"⚠️  No variants found in result")
+                    print(f"========================\n")
+
                 print(f"========================\n")
 
                 results.append({
@@ -313,6 +360,68 @@ async def sync_products(request: ProductSyncRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def parse_harmonized_system_codes(value: Any) -> List[Dict[str, Optional[str]]]:
+    """
+    Parse harmonized system codes from various input formats
+
+    Supported formats:
+    1. Simple string: "123456" -> [{"harmonizedSystemCode": "123456"}]
+    2. JSON array of strings: '["123456", "654321"]' -> multiple global HS codes
+    3. JSON array of objects: '[{"harmonizedSystemCode": "123456", "countryCode": "DE"}]'
+    4. Pipe-separated: "123456|654321" -> multiple global HS codes
+
+    Returns:
+        List of dicts with 'harmonizedSystemCode' and optional 'countryCode'
+    """
+    if not value:
+        return []
+
+    try:
+        # Convert to string
+        str_value = str(value).strip()
+
+        if not str_value:
+            return []
+
+        # Try to parse as JSON first
+        if str_value.startswith('['):
+            try:
+                parsed = json.loads(str_value)
+                if isinstance(parsed, list):
+                    result = []
+                    for item in parsed:
+                        if isinstance(item, str):
+                            # Simple string in array
+                            result.append({"harmonizedSystemCode": item})
+                        elif isinstance(item, dict):
+                            # Object with harmonizedSystemCode and optional countryCode
+                            if "harmonizedSystemCode" in item:
+                                code_entry = {"harmonizedSystemCode": item["harmonizedSystemCode"]}
+                                if "countryCode" in item and item["countryCode"]:
+                                    code_entry["countryCode"] = item["countryCode"]
+                                result.append(code_entry)
+                    return result
+            except json.JSONDecodeError:
+                pass
+
+        # Check for pipe-separated values
+        if '|' in str_value:
+            codes = [code.strip() for code in str_value.split('|') if code.strip()]
+            return [{"harmonizedSystemCode": code} for code in codes]
+
+        # Check for comma-separated values (but not if it looks like JSON)
+        if ',' in str_value and not str_value.startswith('{'):
+            codes = [code.strip() for code in str_value.split(',') if code.strip()]
+            return [{"harmonizedSystemCode": code} for code in codes]
+
+        # Simple string - treat as single global HS code
+        return [{"harmonizedSystemCode": str_value}]
+
+    except Exception as e:
+        print(f"Error parsing harmonized system codes from '{value}': {e}")
+        return []
 
 
 def get_value_from_article(article: Dict, path: str) -> Any:
@@ -430,6 +539,12 @@ def transform_article_to_product(
                     "value": str(transformed_value),
                     "type": metafield_type
                 })
+        # Handle harmonized system codes
+        elif shopify_field == "harmonized_system_codes[]":
+            hs_codes = parse_harmonized_system_codes(transformed_value)
+            if hs_codes:
+                shopify_product["_harmonized_system_codes"] = hs_codes
+                print(f"  → Parsed {len(hs_codes)} HS code(s): {hs_codes}")
         else:
             shopify_product[shopify_field] = transformed_value
 
