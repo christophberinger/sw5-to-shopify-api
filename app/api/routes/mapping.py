@@ -281,12 +281,11 @@ async def sync_products(request: ProductSyncRequest):
                         status = "created"
                         print(f"✓ Created product with ID: {result.get('product', {}).get('id')}")
 
-                # Update harmonized system codes if present
+                # Update inventory item fields (HS codes and cost) if present
                 hs_codes = shopify_product.get('_harmonized_system_codes', [])
-                if hs_codes:
-                    print(f"\n=== UPDATING HS CODES ===")
-                    print(f"Found {len(hs_codes)} HS code entries to update")
+                cost = shopify_product.get('_cost')
 
+                if hs_codes or cost is not None:
                     # Get the variant ID from the result
                     product_data = result.get('product', {})
                     variants = product_data.get('variants', [])
@@ -295,36 +294,51 @@ async def sync_products(request: ProductSyncRequest):
                         variant_id = variants[0].get('id')
                         if variant_id:
                             try:
-                                # Get inventory item ID
+                                # Get inventory item ID (reuse for both operations)
                                 inventory_item_id = shopify_client.get_inventory_item_id_from_variant(variant_id)
 
                                 if inventory_item_id:
+                                    print(f"\n=== UPDATING INVENTORY ITEM ===")
                                     print(f"Inventory Item ID: {inventory_item_id}")
 
-                                    # Update HS codes
-                                    hs_result = shopify_client.update_inventory_item_harmonized_codes(
-                                        inventory_item_id,
-                                        hs_codes
-                                    )
+                                    # Update HS codes if present
+                                    if hs_codes:
+                                        print(f"\n→ Updating HS Codes ({len(hs_codes)} entries)")
+                                        hs_result = shopify_client.update_inventory_item_harmonized_codes(
+                                            inventory_item_id,
+                                            hs_codes
+                                        )
 
-                                    # Extract HS codes from GraphQL response (edges/node structure)
-                                    hs_codes_connection = hs_result.get('data', {}).get('inventoryItemUpdate', {}).get('inventoryItem', {}).get('countryHarmonizedSystemCodes', {})
-                                    updated_codes_edges = hs_codes_connection.get('edges', [])
-                                    updated_codes = [edge.get('node', {}) for edge in updated_codes_edges]
+                                        # Extract HS codes from GraphQL response (edges/node structure)
+                                        hs_codes_connection = hs_result.get('data', {}).get('inventoryItemUpdate', {}).get('inventoryItem', {}).get('countryHarmonizedSystemCodes', {})
+                                        updated_codes_edges = hs_codes_connection.get('edges', [])
+                                        updated_codes = [edge.get('node', {}) for edge in updated_codes_edges]
 
-                                    print(f"✓ Updated {len(updated_codes)} HS codes")
-                                    for code in updated_codes:
-                                        country = code.get('countryCode') or 'Global'
-                                        print(f"  - {country}: {code.get('harmonizedSystemCode')}")
+                                        print(f"✓ Updated {len(updated_codes)} HS codes")
+                                        for code in updated_codes:
+                                            country = code.get('countryCode') or 'Global'
+                                            print(f"  - {country}: {code.get('harmonizedSystemCode')}")
+
+                                    # Update cost if present
+                                    if cost is not None:
+                                        print(f"\n→ Updating Cost: {cost}")
+                                        cost_result = shopify_client.update_inventory_item_cost(
+                                            inventory_item_id,
+                                            cost
+                                        )
+
+                                        updated_cost = cost_result.get('data', {}).get('inventoryItemUpdate', {}).get('inventoryItem', {}).get('cost')
+                                        print(f"✓ Cost updated to: {updated_cost}")
+
+                                    print(f"========================\n")
                                 else:
                                     print(f"⚠️  Could not get inventory item ID for variant {variant_id}")
                             except Exception as e:
-                                print(f"⚠️  Error updating HS codes: {e}")
+                                print(f"⚠️  Error updating inventory item: {e}")
                         else:
                             print(f"⚠️  No variant ID found in result")
                     else:
                         print(f"⚠️  No variants found in result")
-                    print(f"========================\n")
 
                 print(f"========================\n")
 
@@ -428,8 +442,19 @@ def get_value_from_article(article: Dict, path: str) -> Any:
     """
     Get value from article using dot notation path
     Example: "mainDetail.number" -> article['mainDetail']['number']
+
+    Special handling:
+    - "propertyValues.value" -> extracts all values and joins them with " | "
     """
     try:
+        # Special case for propertyValues.value - extract all values
+        if path == "propertyValues.value":
+            property_values = article.get('propertyValues', [])
+            if isinstance(property_values, list) and len(property_values) > 0:
+                all_values = [item.get('value', '') for item in property_values if isinstance(item, dict) and 'value' in item]
+                return " | ".join(all_values) if all_values else None
+            return None
+
         keys = path.split('.')
         value = article
 
@@ -545,6 +570,14 @@ def transform_article_to_product(
             if hs_codes:
                 shopify_product["_harmonized_system_codes"] = hs_codes
                 print(f"  → Parsed {len(hs_codes)} HS code(s): {hs_codes}")
+        # Handle cost (inventory item field)
+        elif shopify_field == "cost":
+            try:
+                cost_value = float(transformed_value)
+                shopify_product["_cost"] = cost_value
+                print(f"  → Cost set to: {cost_value}")
+            except (ValueError, TypeError) as e:
+                print(f"  ⚠️  Invalid cost value '{transformed_value}': {e}")
         else:
             shopify_product[shopify_field] = transformed_value
 

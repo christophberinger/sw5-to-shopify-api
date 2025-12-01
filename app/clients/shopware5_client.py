@@ -98,19 +98,36 @@ class Shopware5Client:
                 field_path = f"{prefix}.{key}" if prefix else key
                 field_type = type(value).__name__
 
-                # Add the field
-                fields.append({
-                    "path": field_path,
-                    "type": field_type,
-                    "sample_value": str(value)[:100] if value is not None else None
-                })
+                # Special handling for propertyValues - extract all values
+                if key == "propertyValues" and isinstance(value, list) and len(value) > 0:
+                    # Create a combined field with all property values
+                    all_values = [item.get('value', '') for item in value if isinstance(item, dict) and 'value' in item]
+                    combined_value = " | ".join(all_values)
 
-                # Recurse into nested objects (but limit depth)
-                if isinstance(value, dict) and prefix.count('.') < 2:
-                    fields.extend(self._extract_fields_from_object(value, field_path))
-                elif isinstance(value, list) and len(value) > 0 and prefix.count('.') < 2:
-                    # Sample first item in array
-                    fields.extend(self._extract_fields_from_object(value[0], f"{field_path}[0]"))
+                    fields.append({
+                        "path": "propertyValues.value",
+                        "type": "string",
+                        "sample_value": combined_value[:100] if combined_value else None,
+                        "description": f"Property values (combined from {len(all_values)} items)"
+                    })
+
+                    # Also add individual fields from first item for reference
+                    if isinstance(value[0], dict):
+                        fields.extend(self._extract_fields_from_object(value[0], f"{field_path}[0]"))
+                else:
+                    # Add the field
+                    fields.append({
+                        "path": field_path,
+                        "type": field_type,
+                        "sample_value": str(value)[:100] if value is not None else None
+                    })
+
+                    # Recurse into nested objects (but limit depth)
+                    if isinstance(value, dict) and prefix.count('.') < 2:
+                        fields.extend(self._extract_fields_from_object(value, field_path))
+                    elif isinstance(value, list) and len(value) > 0 and prefix.count('.') < 2 and key != "propertyValues":
+                        # Sample first item in array (skip propertyValues as it's handled above)
+                        fields.extend(self._extract_fields_from_object(value[0], f"{field_path}[0]"))
 
         return fields
 

@@ -14,6 +14,7 @@ function ProductSync({ mapping }: ProductSyncProps) {
   const [results, setResults] = useState<SyncResult[]>([])
   const [showResults, setShowResults] = useState(false)
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null)
+  const [abortController, setAbortController] = useState<AbortController | null>(null)
 
   const handleSync = async () => {
     if (mapping.length === 0) {
@@ -63,6 +64,16 @@ function ProductSync({ mapping }: ProductSyncProps) {
     setSyncing(false)
   }
 
+  const handleAbort = () => {
+    if (abortController) {
+      abortController.abort()
+      setAbortController(null)
+      setSyncing(false)
+      setSyncProgress(null)
+      toast.error('Synchronisation abgebrochen')
+    }
+  }
+
   const handleSyncAll = async () => {
     if (mapping.length === 0) {
       toast.error('Bitte definieren Sie zuerst Field-Mappings')
@@ -77,6 +88,8 @@ function ProductSync({ mapping }: ProductSyncProps) {
       return
     }
 
+    const controller = new AbortController()
+    setAbortController(controller)
     setSyncing(true)
     setResults([])
     setShowResults(true)
@@ -119,6 +132,12 @@ function ProductSync({ mapping }: ProductSyncProps) {
       let processedCount = 0
 
       for (let i = 0; i < allArticleIds.length; i += batchSize) {
+        // Check if aborted
+        if (controller.signal.aborted) {
+          toast.error('Synchronisation abgebrochen')
+          break
+        }
+
         const batch = allArticleIds.slice(i, i + batchSize)
 
         // Update progress
@@ -128,18 +147,25 @@ function ProductSync({ mapping }: ProductSyncProps) {
         toast(`Verarbeite Artikel ${batchStart}-${batchEnd} von ${totalArticles}...`, { duration: 2000 })
 
         // Sync this batch
-        const batchResults = await mappingApi.syncProducts(batch, mapping, syncMode)
-        allResults.push(...batchResults.results)
-        processedCount += batch.length
+        try {
+          const batchResults = await mappingApi.syncProducts(batch, mapping, syncMode)
+          allResults.push(...batchResults.results)
+          processedCount += batch.length
 
-        // Update results and progress in real-time
-        setResults([...allResults])
-        setSyncProgress({ current: processedCount, total: totalArticles })
+          // Update results and progress in real-time
+          setResults([...allResults])
+          setSyncProgress({ current: processedCount, total: totalArticles })
 
-        // Show intermediate progress
-        const successCount = allResults.filter(r => r.success).length
-        const failCount = allResults.filter(r => !r.success).length
-        console.log(`Progress: ${processedCount}/${totalArticles} | Erfolg: ${successCount} | Fehler: ${failCount}`)
+          // Show intermediate progress
+          const successCount = allResults.filter(r => r.success).length
+          const failCount = allResults.filter(r => !r.success).length
+          console.log(`Progress: ${processedCount}/${totalArticles} | Erfolg: ${successCount} | Fehler: ${failCount}`)
+        } catch (error: any) {
+          if (controller.signal.aborted) {
+            break
+          }
+          throw error
+        }
       }
 
       // Final summary
@@ -156,11 +182,14 @@ function ProductSync({ mapping }: ProductSyncProps) {
         )
       }
     } catch (error: any) {
-      toast.error(`Fehler beim Synchronisieren: ${error.message}`)
-      console.error(error)
+      if (!controller.signal.aborted) {
+        toast.error(`Fehler beim Synchronisieren: ${error.message}`)
+        console.error(error)
+      }
       setSyncProgress(null)
     }
 
+    setAbortController(null)
     setSyncing(false)
   }
 
@@ -229,6 +258,16 @@ function ProductSync({ mapping }: ProductSyncProps) {
           >
             Alle Artikel synchronisieren
           </button>
+
+          {syncing && abortController && (
+            <button
+              className="button button-danger"
+              onClick={handleAbort}
+              style={{ marginTop: '0.5rem' }}
+            >
+              ⚠️ Synchronisation abbrechen
+            </button>
+          )}
         </div>
       </div>
 
