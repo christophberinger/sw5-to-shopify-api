@@ -1,4 +1,4 @@
-# SW5 to Shopify Import Tool
+# SW5 to Shopify API
 
 Ein webbasiertes Tool zum Importieren von Artikeln aus Shopware 5 (inkl. Pickware-Zusatzfelder) zu Shopify mit flexiblem Field-Mapping.
 

@@ -1,5 +1,5 @@
 @echo off
-echo Starting SW5 to Shopify Import Tool...
+echo Starting SW5 to Shopify API...
 echo.
 
 REM Check if .env exists

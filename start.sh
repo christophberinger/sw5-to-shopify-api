@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# SW5 to Shopify Import Tool Startup Script
+# SW5 to Shopify API Startup Script
 
-echo "🚀 Starting SW5 to Shopify Import Tool..."
+echo "🚀 Starting SW5 to Shopify API..."
 echo ""
 
 # Check if .env exists
