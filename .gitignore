@@ -24,6 +24,9 @@ wheels/
 *.egg
 .claude/
 
+# Demo data
+SW5/
+
 # Environment
 .env
 .env.local
