@@ -1,6 +1,6 @@
 # SW5 to Shopify API
 
-Ein webbasiertes Tool zum Importieren von Artikeln aus Shopware 5 (inkl. Pickware-Zusatzfelder) zu Shopify mit flexiblem Field-Mapping.
+Webbasiertes Tool zum Importieren von Artikeln aus Shopware 5 (inkl. Pickware-Zusatzfelder) zu Shopify mit flexiblem Field-Mapping und Daten-Transformationen.
 
 ## Features
 
@@ -9,6 +9,11 @@ Ein webbasiertes Tool zum Importieren von Artikeln aus Shopware 5 (inkl. Pickwar
 - Automatisches Auslesen aller verfügbaren Felder aus SW5 Artikeln (inkl. Pickware-Felder)
 - Übersicht aller Shopify Produktfelder
 - Visuelles Field-Mapping zwischen SW5 und Shopify
+- **Transformations-Engine** für Datenmanipulation:
+  - Direkte Übernahme (ohne Transformation)
+  - String-Ersetzung (einfach oder mit Regex)
+  - Split & Join (Delimiter-Konvertierung)
+  - Custom Python Code
 - Speicherung des Mappings im Browser (LocalStorage)
 - Synchronisation einzelner oder aller Artikel
 - Unterstützung für Create, Update und Upsert Modi
@@ -29,6 +34,20 @@ Ein webbasiertes Tool zum Importieren von Artikeln aus Shopware 5 (inkl. Pickwar
 - Axios
 - React Hot Toast (Notifications)
 
+## Schnellstart
+
+Das Projekt enthält ein Start-Script für einfache Inbetriebnahme:
+
+```bash
+./start.sh
+```
+
+Das Script prüft automatisch:
+- Existenz der `.env` Datei (erstellt sie bei Bedarf)
+- Installation der Python-Dependencies
+- Installation der Node-Dependencies
+- Startet Backend und Frontend gleichzeitig
+
 ## Installation
 
 ### Voraussetzungen
@@ -38,16 +57,18 @@ Ein webbasiertes Tool zum Importieren von Artikeln aus Shopware 5 (inkl. Pickwar
 - Shopware 5 API Zugang (Username + API Key)
 - Shopify Admin API Zugang (Access Token)
 
-### Backend Setup
+### Manuelle Installation
 
-1. Erstellen Sie eine `.env` Datei im `app/` Verzeichnis:
+#### Backend Setup
+
+1. `.env` Datei im `app/` Verzeichnis erstellen:
 
 ```bash
 cd app
 cp .env.example .env
 ```
 
-2. Füllen Sie die `.env` Datei mit Ihren API-Credentials aus:
+2. `.env` Datei mit API-Credentials ausfüllen:
 
 ```env
 # Shopware 5 API
@@ -64,13 +85,13 @@ SHOPIFY_API_VERSION=2024-01
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 ```
 
-3. Installieren Sie die Python-Dependencies:
+3. Python-Dependencies installieren:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Starten Sie den Backend-Server:
+4. Backend-Server starten:
 
 ```bash
 uvicorn main:app --reload --port 8000
@@ -80,21 +101,21 @@ Das Backend läuft nun auf `http://localhost:8000`
 
 API-Dokumentation: `http://localhost:8000/docs`
 
-### Frontend Setup
+#### Frontend Setup
 
-1. Wechseln Sie ins Frontend-Verzeichnis:
+1. Ins Frontend-Verzeichnis wechseln:
 
 ```bash
 cd frontend
 ```
 
-2. Installieren Sie die Node-Dependencies:
+2. Node-Dependencies installieren:
 
 ```bash
 npm install
 ```
 
-3. Starten Sie den Development-Server:
+3. Development-Server starten:
 
 ```bash
 npm run dev
@@ -106,19 +127,21 @@ Das Frontend läuft nun auf `http://localhost:3000`
 
 ### 1. Verbindung testen
 
-Nach dem Start der Anwendung wird automatisch die Verbindung zu Shopware 5 und Shopify getestet. Sie sehen grüne Indikatoren, wenn die Verbindungen erfolgreich sind.
+Nach dem Start der Anwendung wird automatisch die Verbindung zu Shopware 5 und Shopify getestet. Grüne Indikatoren zeigen erfolgreiche Verbindungen an.
 
 ### 2. Field-Mapping erstellen
 
-1. Im Bereich "Field Mapping" sehen Sie zwei Listen:
-   - Links: Alle verfügbaren Shopware 5 Felder (automatisch aus einem Beispiel-Artikel extrahiert)
-   - Rechts: Alle verfügbaren Shopify Produktfelder
+Im Bereich "Field Mapping" werden zwei Listen angezeigt:
+- **Links:** Alle verfügbaren Shopware 5 Felder (automatisch aus einem Beispiel-Artikel extrahiert)
+- **Rechts:** Alle verfügbaren Shopify Produktfelder
 
-2. Klicken Sie auf ein SW5-Feld (links) und dann auf ein Shopify-Feld (rechts)
+**Mapping hinzufügen:**
+1. Auf ein SW5-Feld (links) klicken
+2. Auf ein Shopify-Feld (rechts) klicken
+3. Optional: Transformation bearbeiten (siehe unten)
+4. Auf "Mapping hinzufügen" klicken
 
-3. Klicken Sie auf "Mapping hinzufügen"
-
-4. Das Mapping wird in der Liste "Aktive Mappings" angezeigt und automatisch im Browser gespeichert
+Das Mapping wird in der Liste "Aktive Mappings" angezeigt und automatisch im Browser gespeichert.
 
 **Beispiel-Mappings:**
 
@@ -131,20 +154,51 @@ Nach dem Start der Anwendung wird automatisch die Verbindung zu Shopware 5 und S
 | `mainDetail.prices[0].price` | `variants[].price` |
 | `mainDetail.inStock` | `variants[].inventory_quantity` |
 
-### 3. Artikel synchronisieren
+### 3. Transformationen anwenden
 
-1. Geben Sie Artikel-IDs ein (komma- oder leerzeichengetrennt), z.B. `1, 2, 3` oder `1 2 3`
+Für jedes Mapping kann eine Transformation definiert werden, um Daten vor dem Import anzupassen:
 
-2. Wählen Sie einen Sync-Modus:
+#### Transformations-Typen:
+
+**Direkt (direct)**
+- Keine Transformation, Wert wird 1:1 übernommen
+
+**Ersetzen (replace)**
+- Einfache String-Ersetzung
+- Beispiel: "Fahrzeugverwendung:" → "" (entfernen)
+
+**Regex Ersetzen (regex)**
+- Pattern-basierte Ersetzung mit regulären Ausdrücken
+- Beispiel: `^Fahrzeugverwendung:\s*` → ""
+
+**Split & Join (split_join)**
+- Text bei einem Delimiter trennen und mit anderem Delimiter zusammenfügen
+- Automatische Entfernung von Präfixen
+- Beispiel:
+  - **Vorher:** `Fahrzeugverwendung:T3 Bus|Fahrzeugverwendung:T3 Pritsche`
+  - **Split Delimiter:** `|`
+  - **Join Delimiter:** `, `
+  - **Nachher:** `T3 Bus, T3 Pritsche`
+
+**Custom (custom)**
+- Eigener Python Code für komplexe Transformationen
+- Beispiel: `value.upper()` oder `value.replace('alt', 'neu')`
+- ⚠️ **Vorsicht:** Code wird direkt ausgeführt
+
+### 4. Artikel synchronisieren
+
+1. Artikel-IDs eingeben (komma- oder leerzeichengetrennt), z.B. `1, 2, 3` oder `1 2 3`
+
+2. Sync-Modus wählen:
    - **Upsert**: Erstellt neue Produkte oder aktualisiert bestehende (empfohlen)
    - **Create**: Erstellt nur neue Produkte
    - **Update**: Aktualisiert nur bestehende Produkte
 
-3. Klicken Sie auf "Ausgewählte synchronisieren"
+3. Auf "Ausgewählte synchronisieren" klicken
 
-4. Sie sehen den Fortschritt und die Ergebnisse in Echtzeit
+4. Fortschritt und Ergebnisse werden in Echtzeit angezeigt
 
-**Tipp:** Verwenden Sie "Alle Artikel synchronisieren" um alle Artikel aus Shopware 5 zu importieren (Vorsicht bei großen Datenmengen!)
+**Tipp:** "Alle Artikel synchronisieren" importiert alle Artikel aus Shopware 5 (Vorsicht bei großen Datenmengen!)
 
 ## API-Endpunkte
 
@@ -174,7 +228,7 @@ Nach dem Start der Anwendung wird automatisch die Verbindung zu Shopware 5 und S
 
 ## Pickware-Felder
 
-Pickware speichert seine Zusatzfelder typischerweise im `attribute`-Objekt eines Artikels. Diese Felder werden automatisch erkannt und können gemappt werden.
+Pickware speichert Zusatzfelder typischerweise im `attribute`-Objekt eines Artikels. Diese Felder werden automatisch erkannt und können gemappt werden.
 
 Beispiel-Pickware-Felder:
 - `attribute.pickwareStockManagementStockMovementId`
@@ -185,44 +239,45 @@ Beispiel-Pickware-Felder:
 
 ### Backend startet nicht
 
-- Prüfen Sie, ob alle Dependencies installiert sind: `pip install -r requirements.txt`
-- Prüfen Sie die `.env` Datei auf korrekte Credentials
-- Testen Sie die API-Verbindungen manuell
+- Alle Dependencies installiert? → `pip install -r requirements.txt`
+- `.env` Datei vorhanden und korrekt ausgefüllt?
+- API-Verbindungen manuell testen
 
 ### Frontend startet nicht
 
-- Löschen Sie `node_modules` und führen Sie `npm install` erneut aus
-- Prüfen Sie, ob Port 3000 verfügbar ist
-- Prüfen Sie, ob das Backend läuft
+- `node_modules` löschen und `npm install` erneut ausführen
+- Port 3000 verfügbar?
+- Backend läuft?
 
 ### Verbindung zu SW5/Shopify schlägt fehl
 
 **Shopware 5:**
-- Prüfen Sie die URL (Format: `https://your-shop.com/api`)
-- Prüfen Sie Username und API Key
-- Stellen Sie sicher, dass die API aktiviert ist
-- Testen Sie mit Digest Authentication
+- URL prüfen (Format: `https://your-shop.com/api`)
+- Username und API Key prüfen
+- API aktiviert?
+- Digest Authentication testen
 
 **Shopify:**
-- Prüfen Sie die Shop-URL (Format: `your-shop.myshopify.com`)
-- Prüfen Sie den Access Token
-- Stellen Sie sicher, dass die richtigen API-Scopes aktiviert sind:
+- Shop-URL prüfen (Format: `your-shop.myshopify.com`)
+- Access Token prüfen
+- Richtige API-Scopes aktiviert?
   - `read_products`
   - `write_products`
 
 ### Artikel werden nicht korrekt synchronisiert
 
-- Prüfen Sie das Field-Mapping
-- Achten Sie darauf, dass Pflichtfelder gemappt sind (z.B. `title`, `variants[].price`)
-- Prüfen Sie die Sync-Ergebnisse auf Fehlermeldungen
-- Testen Sie zunächst mit einzelnen Artikeln
+- Field-Mapping prüfen
+- Pflichtfelder gemappt? (z.B. `title`, `variants[].price`)
+- Sync-Ergebnisse auf Fehlermeldungen prüfen
+- Zunächst mit einzelnen Artikeln testen
+- Transformationen korrekt konfiguriert?
 
 ## Entwicklung
 
 ### Projekt-Struktur
 
 ```
-sw5-pickware-import/
+sw5-to-shopify-api/
 ├── app/                        # Backend (FastAPI)
 │   ├── api/
 │   │   └── routes/
@@ -232,28 +287,35 @@ sw5-pickware-import/
 │   ├── clients/
 │   │   ├── shopware5_client.py # SW5 API Client
 │   │   └── shopify_client.py   # Shopify API Client
+│   ├── utils/
+│   │   └── transformations.py  # Transformation Engine
 │   ├── main.py                 # FastAPI App
 │   ├── config.py               # Configuration
 │   └── requirements.txt
 │
-└── frontend/                   # Frontend (React + Vite)
-    ├── src/
-    │   ├── components/
-    │   │   ├── ConnectionStatus.tsx
-    │   │   ├── FieldMapper.tsx
-    │   │   └── ProductSync.tsx
-    │   ├── utils/
-    │   │   ├── api.ts          # API Client
-    │   │   └── storage.ts      # LocalStorage Helper
-    │   ├── App.tsx
-    │   ├── main.tsx
-    │   └── types.ts
-    └── package.json
+├── frontend/                   # Frontend (React + Vite)
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── ConnectionStatus.tsx
+│   │   │   ├── FieldMapper.tsx
+│   │   │   ├── ProductSync.tsx
+│   │   │   └── TransformationEditor.tsx
+│   │   ├── utils/
+│   │   │   ├── api.ts          # API Client
+│   │   │   └── storage.ts      # LocalStorage Helper
+│   │   ├── App.tsx
+│   │   ├── main.tsx
+│   │   └── types.ts
+│   └── package.json
+│
+├── start.sh                    # Start-Script (Unix/Mac)
+├── start.bat                   # Start-Script (Windows)
+└── README.md
 ```
 
 ### Backend erweitern
 
-Fügen Sie neue API-Routes in `app/api/routes/` hinzu und registrieren Sie diese in `main.py`:
+Neue API-Routes in `app/api/routes/` hinzufügen und in `main.py` registrieren:
 
 ```python
 from api.routes import your_new_route
@@ -263,7 +325,11 @@ app.include_router(your_new_route.router, prefix="/api/your-route", tags=["Your 
 
 ### Frontend erweitern
 
-Erstellen Sie neue Komponenten in `frontend/src/components/` und importieren Sie diese in `App.tsx`.
+Neue Komponenten in `frontend/src/components/` erstellen und in `App.tsx` importieren.
+
+### Neue Transformations-Typen hinzufügen
+
+Transformations-Logik in `app/utils/transformations.py` erweitern und entsprechende UI in `frontend/src/components/TransformationEditor.tsx` hinzufügen.
 
 ## Lizenz
 
@@ -271,4 +337,4 @@ MIT
 
 ## Support
 
-Bei Fragen oder Problemen erstellen Sie bitte ein Issue auf GitHub.
+Bei Fragen oder Problemen bitte ein Issue auf GitHub erstellen.
