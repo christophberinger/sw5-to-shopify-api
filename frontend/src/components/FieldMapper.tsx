@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { shopwareApi, shopifyApi } from '../utils/api'
-import type { Field, FieldMapping, TransformationRule } from '../types'
+import { entityApi, shopwareApi, shopifyApi } from '../utils/api'
+import type { Field, FieldMapping, TransformationRule, EntityType } from '../types'
+import { ENTITY_CONFIGS } from '../types'
 import TransformationEditor from './TransformationEditor'
 
 interface FieldMapperProps {
+  entityType: EntityType
   mapping: FieldMapping[]
   onMappingChange: (mapping: FieldMapping[]) => void
 }
 
-function FieldMapper({ mapping, onMappingChange }: FieldMapperProps) {
+function FieldMapper({ entityType, mapping, onMappingChange }: FieldMapperProps) {
+  const config = ENTITY_CONFIGS[entityType]
   const [sw5Fields, setSw5Fields] = useState<Field[]>([])
   const [shopifyFields, setShopifyFields] = useState<Field[]>([])
   const [selectedSw5Field, setSelectedSw5Field] = useState<string | null>(null)
@@ -23,47 +26,43 @@ function FieldMapper({ mapping, onMappingChange }: FieldMapperProps) {
 
   useEffect(() => {
     loadFields()
-  }, [])
+  }, [entityType])
 
-  const loadFields = async (artNr?: string, prodId?: string) => {
+  const loadFields = async (identifier?: string) => {
     setLoading(true)
 
     try {
       const [sw5FieldsData, shopifyFieldsData] = await Promise.all([
-        shopwareApi.getFields(artNr),
-        shopifyApi.getFields(prodId),
+        entityApi.getFields(entityType, 'shopware', identifier),
+        entityApi.getFields(entityType, 'shopify', identifier),
       ])
 
       setSw5Fields(sw5FieldsData)
       setShopifyFields(shopifyFieldsData)
 
       let successMsg = 'Felder erfolgreich geladen'
-      if (artNr && prodId) {
-        successMsg = `Felder für Artikel ${artNr} und Produkt ${prodId} geladen`
-      } else if (artNr) {
-        successMsg = `Felder für Artikel ${artNr} geladen`
-      } else if (prodId) {
-        successMsg = `Felder für Produkt ${prodId} geladen`
+      if (identifier) {
+        successMsg = `Felder für ${config.sw5Label} ${identifier} geladen`
       }
       toast.success(successMsg)
     } catch (error: any) {
       // Show detailed error message from backend
       const errorMsg = error.response?.data?.detail || error.message || 'Fehler beim Laden der Felder'
 
-      if (error.response?.status === 404 && artNr) {
-        toast.error(`Artikel "${artNr}" nicht gefunden. Bitte prüfen Sie die Artikelnummer oder laden Sie ohne Artikelnummer.`)
+      if (error.response?.status === 404 && identifier) {
+        toast.error(`${config.sw5Label} "${identifier}" nicht gefunden. Bitte prüfen Sie die ID oder laden Sie ohne ID.`)
       } else {
         toast.error(errorMsg)
       }
 
       console.error(error)
 
-      // If article not found, still try to load default fields
-      if (error.response?.status === 404 && artNr) {
+      // If not found, still try to load default fields
+      if (error.response?.status === 404 && identifier) {
         try {
           const [sw5FieldsData, shopifyFieldsData] = await Promise.all([
-            shopwareApi.getFields(),
-            shopifyApi.getFields(),
+            entityApi.getFields(entityType, 'shopware'),
+            entityApi.getFields(entityType, 'shopify'),
           ])
           setSw5Fields(sw5FieldsData)
           setShopifyFields(shopifyFieldsData)
@@ -78,9 +77,8 @@ function FieldMapper({ mapping, onMappingChange }: FieldMapperProps) {
   }
 
   const handleLoadByIdentifiers = () => {
-    const artNr = articleNumber.trim() || undefined
-    const prodId = productIdentifier.trim() || undefined
-    loadFields(artNr, prodId)
+    const identifier = articleNumber.trim() || productIdentifier.trim() || undefined
+    loadFields(identifier)
   }
 
   const addMapping = () => {
@@ -151,12 +149,12 @@ function FieldMapper({ mapping, onMappingChange }: FieldMapperProps) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
           <div>
             <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '0.25rem', color: '#666' }}>
-              Shopware 5 Artikel:
+              {config.sw5Label}:
             </label>
             <input
               type="text"
               className="input"
-              placeholder="Artikelnummer (z.B. SW10001)"
+              placeholder="ID oder Nummer"
               value={articleNumber}
               onChange={(e) => setArticleNumber(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleLoadByIdentifiers()}
@@ -164,7 +162,7 @@ function FieldMapper({ mapping, onMappingChange }: FieldMapperProps) {
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '0.25rem', color: '#666' }}>
-              Shopify Produkt:
+              {config.shopifyLabel}:
             </label>
             <input
               type="text"
@@ -198,7 +196,7 @@ function FieldMapper({ mapping, onMappingChange }: FieldMapperProps) {
 
           <div className="field-mapping-grid">
             <div>
-              <h3>Shopware 5 Felder ({sw5Fields.length})</h3>
+              <h3>{config.sw5Label} ({sw5Fields.length})</h3>
               <input
                 type="text"
                 className="input"
@@ -229,7 +227,7 @@ function FieldMapper({ mapping, onMappingChange }: FieldMapperProps) {
             </div>
 
             <div>
-              <h3>Shopify Felder ({shopifyFields.length})</h3>
+              <h3>{config.shopifyLabel} ({shopifyFields.length})</h3>
               <input
                 type="text"
                 className="input"

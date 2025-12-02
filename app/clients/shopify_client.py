@@ -766,3 +766,176 @@ class ShopifyClient:
         except Exception as e:
             print(f"Error updating inventory item cost: {e}")
             raise
+
+    # ==================== CUSTOMER METHODS ====================
+
+    def get_customers(self, limit: int = 50, page_info: Optional[str] = None) -> Dict:
+        """
+        Get customers from Shopify
+        """
+        params = {'limit': limit}
+        if page_info:
+            params['page_info'] = page_info
+
+        return self._make_request('GET', 'customers', params=params)
+
+    def get_customer(self, customer_id: int) -> Dict:
+        """
+        Get single customer by ID
+        """
+        return self._make_request('GET', f'customers/{customer_id}')
+
+    def create_customer(self, customer_data: Dict) -> Dict:
+        """
+        Create a new customer in Shopify
+        """
+        return self._make_request('POST', 'customers', json={"customer": customer_data})
+
+    def update_customer(self, customer_id: int, customer_data: Dict) -> Dict:
+        """
+        Update an existing customer in Shopify
+        """
+        return self._make_request('PUT', f'customers/{customer_id}', json={"customer": customer_data})
+
+    def search_customer_by_email(self, email: str) -> Optional[Dict]:
+        """
+        Search for a customer by email address using GraphQL
+        """
+        try:
+            query = """
+            query searchCustomers($query: String!) {
+                customers(first: 1, query: $query) {
+                    edges {
+                        node {
+                            id
+                            email
+                            firstName
+                            lastName
+                            phone
+                            verifiedEmail
+                            defaultAddress {
+                                id
+                                address1
+                                address2
+                                city
+                                province
+                                country
+                                zip
+                            }
+                        }
+                    }
+                }
+            }
+            """
+
+            variables = {
+                "query": f"email:{email}"
+            }
+
+            result = self._make_graphql_request(query, variables)
+
+            if 'errors' in result:
+                return None
+
+            edges = result.get('data', {}).get('customers', {}).get('edges', [])
+            if edges and len(edges) > 0:
+                # Convert GraphQL ID to REST ID
+                customer = edges[0]['node']
+                gid = customer.get('id', '')
+                # Extract numeric ID from gid://shopify/Customer/12345
+                if gid:
+                    customer['id'] = int(gid.split('/')[-1])
+                return customer
+
+            return None
+
+        except Exception as e:
+            print(f"Error searching for customer by email: {e}")
+            return None
+
+    def get_customer_fields(self) -> List[Dict[str, Any]]:
+        """
+        Get available customer fields from Shopify
+        Returns a list of field definitions
+        """
+        # Shopify customer schema (simplified)
+        return [
+            {"path": "id", "type": "int", "description": "Customer ID"},
+            {"path": "email", "type": "str", "description": "Customer email"},
+            {"path": "firstName", "type": "str", "description": "First name"},
+            {"path": "lastName", "type": "str", "description": "Last name"},
+            {"path": "phone", "type": "str", "description": "Phone number"},
+            {"path": "verifiedEmail", "type": "bool", "description": "Email verified"},
+            {"path": "state", "type": "str", "description": "Customer state (enabled/disabled)"},
+            {"path": "note", "type": "str", "description": "Customer note"},
+            {"path": "tags", "type": "str", "description": "Customer tags (comma-separated)"},
+            {"path": "addresses", "type": "list", "description": "Customer addresses"},
+            {"path": "addresses[].address1", "type": "str", "description": "Address line 1"},
+            {"path": "addresses[].address2", "type": "str", "description": "Address line 2"},
+            {"path": "addresses[].city", "type": "str", "description": "City"},
+            {"path": "addresses[].province", "type": "str", "description": "Province/State"},
+            {"path": "addresses[].country", "type": "str", "description": "Country"},
+            {"path": "addresses[].zip", "type": "str", "description": "Postal/ZIP code"},
+            {"path": "addresses[].phone", "type": "str", "description": "Address phone"},
+            {"path": "addresses[].company", "type": "str", "description": "Company name"},
+            {"path": "metafields", "type": "list", "description": "Customer metafields"},
+        ]
+
+    # ==================== ORDER METHODS ====================
+
+    def get_orders(self, limit: int = 50, status: str = "any", page_info: Optional[str] = None) -> Dict:
+        """
+        Get orders from Shopify (Read-Only)
+        """
+        params = {
+            'limit': limit,
+            'status': status
+        }
+        if page_info:
+            params['page_info'] = page_info
+
+        return self._make_request('GET', 'orders', params=params)
+
+    def get_order(self, order_id: int) -> Dict:
+        """
+        Get single order by ID (Read-Only)
+        """
+        return self._make_request('GET', f'orders/{order_id}')
+
+    def get_order_fields(self) -> List[Dict[str, Any]]:
+        """
+        Get available order fields from Shopify
+        Note: Orders are READ-ONLY via API (created via checkout only)
+        """
+        return [
+            {"path": "id", "type": "int", "description": "Order ID"},
+            {"path": "name", "type": "str", "description": "Order name (e.g., #1001)"},
+            {"path": "email", "type": "str", "description": "Customer email"},
+            {"path": "created_at", "type": "datetime", "description": "Order creation date"},
+            {"path": "updated_at", "type": "datetime", "description": "Last update date"},
+            {"path": "total_price", "type": "decimal", "description": "Total order price"},
+            {"path": "subtotal_price", "type": "decimal", "description": "Subtotal price"},
+            {"path": "total_tax", "type": "decimal", "description": "Total tax"},
+            {"path": "currency", "type": "str", "description": "Currency code"},
+            {"path": "financial_status", "type": "str", "description": "Payment status"},
+            {"path": "fulfillment_status", "type": "str", "description": "Fulfillment status"},
+            {"path": "customer.id", "type": "int", "description": "Customer ID"},
+            {"path": "customer.email", "type": "str", "description": "Customer email"},
+            {"path": "customer.firstName", "type": "str", "description": "Customer first name"},
+            {"path": "customer.lastName", "type": "str", "description": "Customer last name"},
+            {"path": "line_items", "type": "list", "description": "Order line items"},
+            {"path": "line_items[].id", "type": "int", "description": "Line item ID"},
+            {"path": "line_items[].name", "type": "str", "description": "Product name"},
+            {"path": "line_items[].quantity", "type": "int", "description": "Quantity ordered"},
+            {"path": "line_items[].price", "type": "decimal", "description": "Item price"},
+            {"path": "line_items[].sku", "type": "str", "description": "SKU"},
+            {"path": "shipping_address.address1", "type": "str", "description": "Shipping address"},
+            {"path": "shipping_address.city", "type": "str", "description": "Shipping city"},
+            {"path": "shipping_address.province", "type": "str", "description": "Shipping province"},
+            {"path": "shipping_address.country", "type": "str", "description": "Shipping country"},
+            {"path": "shipping_address.zip", "type": "str", "description": "Shipping ZIP"},
+            {"path": "billing_address.address1", "type": "str", "description": "Billing address"},
+            {"path": "billing_address.city", "type": "str", "description": "Billing city"},
+            {"path": "note", "type": "str", "description": "Order note"},
+            {"path": "tags", "type": "str", "description": "Order tags"},
+        ]

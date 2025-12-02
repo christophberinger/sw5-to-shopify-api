@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import toast from 'react-hot-toast'
-import { mappingApi, shopwareApi } from '../utils/api'
-import type { FieldMapping, SyncResult } from '../types'
+import { mappingApi, shopwareApi, entityApi } from '../utils/api'
+import type { FieldMapping, SyncResult, EntityType } from '../types'
+import { ENTITY_CONFIGS } from '../types'
 
 interface ProductSyncProps {
+  entityType: EntityType
   mapping: FieldMapping[]
 }
 
-function ProductSync({ mapping }: ProductSyncProps) {
+function ProductSync({ entityType, mapping }: ProductSyncProps) {
+  const config = ENTITY_CONFIGS[entityType]
   const [articleIds, setArticleIds] = useState<string>('')
   const [syncMode, setSyncMode] = useState<'create' | 'update' | 'upsert'>('upsert')
   const [syncing, setSyncing] = useState(false)
@@ -23,19 +26,19 @@ function ProductSync({ mapping }: ProductSyncProps) {
     }
 
     if (!articleIds.trim()) {
-      toast.error('Bitte geben Sie Artikel-IDs ein')
+      toast.error(`Bitte geben Sie ${config.sw5Label} IDs ein`)
       return
     }
 
-    // Parse article IDs (comma or space separated)
-    // Keep as strings so backend can decide if it's an article number or ID
+    // Parse IDs (comma or space separated)
+    // Keep as strings so backend can decide if it's a number or ID
     const ids = articleIds
       .split(/[,\s]+/)
       .map((id) => id.trim())
       .filter((id) => id !== '')
 
     if (ids.length === 0) {
-      toast.error('Keine gültigen Artikel-IDs gefunden')
+      toast.error('Keine gültigen IDs gefunden')
       return
     }
 
@@ -45,15 +48,15 @@ function ProductSync({ mapping }: ProductSyncProps) {
     setSyncProgress(null)
 
     try {
-      const syncResults = await mappingApi.syncProducts(ids, mapping, syncMode)
+      const syncResults = await mappingApi.sync(entityType, ids, mapping, syncMode)
 
       setResults(syncResults.results)
 
       if (syncResults.successful === syncResults.total) {
-        toast.success(`Alle ${syncResults.total} Artikel erfolgreich synchronisiert`)
+        toast.success(`Alle ${syncResults.total} Einträge erfolgreich synchronisiert`)
       } else {
         toast.error(
-          `${syncResults.successful} von ${syncResults.total} Artikeln synchronisiert`
+          `${syncResults.successful} von ${syncResults.total} Einträgen synchronisiert`
         )
       }
     } catch (error: any) {
@@ -82,7 +85,7 @@ function ProductSync({ mapping }: ProductSyncProps) {
 
     if (
       !window.confirm(
-        'Möchten Sie wirklich ALLE Artikel aus Shopware 5 synchronisieren? Dies kann lange dauern.'
+        `Möchten Sie wirklich ALLE ${config.sw5Label} aus Shopware 5 synchronisieren? Dies kann lange dauern.`
       )
     ) {
       return
@@ -96,70 +99,70 @@ function ProductSync({ mapping }: ProductSyncProps) {
     setSyncProgress(null)
 
     try {
-      // First, get just one article to check the total count
-      const firstPage = await shopwareApi.getArticles(1, 0)
+      // First, get just one entity to check the total count
+      const firstPage = await entityApi.getEntities(entityType, 'shopware', 1, 0)
       const totalCount = firstPage.total
 
       if (totalCount === 0) {
-        toast.error('Keine Artikel in Shopware 5 gefunden')
+        toast.error(`Keine ${config.sw5Label} in Shopware 5 gefunden`)
         setSyncing(false)
         return
       }
 
       setSyncProgress({ current: 0, total: totalCount })
-      toast(`Lade ${totalCount} Artikel aus Shopware 5...`)
+      toast(`Lade ${totalCount} ${config.sw5Label} aus Shopware 5...`)
 
-      // Fetch all articles with pagination (500 per page for better performance)
-      const allArticleIds: number[] = []
+      // Fetch all entities with pagination (500 per page for better performance)
+      const allIds: number[] = []
       const pageSize = 500
       const totalPages = Math.ceil(totalCount / pageSize)
 
       for (let page = 0; page < totalPages; page++) {
         const offset = page * pageSize
-        const articlesData = await shopwareApi.getArticles(pageSize, offset)
-        const pageIds = articlesData.data.map((article: any) => article.id)
-        allArticleIds.push(...pageIds)
+        const entitiesData = await entityApi.getEntities(entityType, 'shopware', pageSize, offset)
+        const pageIds = entitiesData.data.map((entity: any) => entity.id)
+        allIds.push(...pageIds)
 
-        toast(`Geladen: ${allArticleIds.length} / ${totalCount} Artikel`, { duration: 1000 })
+        toast(`Geladen: ${allIds.length} / ${totalCount} Einträge`, { duration: 1000 })
       }
 
-      toast(`Synchronisiere ${allArticleIds.length} Artikel...`)
+      toast(`Synchronisiere ${allIds.length} Einträge...`)
 
       // Process in batches to show progress
       const batchSize = 50
       const allResults: SyncResult[] = []
-      const totalArticles = allArticleIds.length
+      const totalEntities = allIds.length
       let processedCount = 0
 
-      for (let i = 0; i < allArticleIds.length; i += batchSize) {
+      for (let i = 0; i < allIds.length; i += batchSize) {
         // Check if aborted
         if (controller.signal.aborted) {
           toast.error('Synchronisation abgebrochen')
           break
         }
 
-        const batch = allArticleIds.slice(i, i + batchSize)
+        const batch = allIds.slice(i, i + batchSize)
 
         // Update progress
         const batchStart = i + 1
-        const batchEnd = Math.min(i + batchSize, totalArticles)
-        setSyncProgress({ current: batchStart, total: totalArticles })
-        toast(`Verarbeite Artikel ${batchStart}-${batchEnd} von ${totalArticles}...`, { duration: 2000 })
+        const batchEnd = Math.min(i + batchSize, totalEntities)
+        setSyncProgress({ current: batchStart, total: totalEntities })
+        toast(`Verarbeite Einträge ${batchStart}-${batchEnd} von ${totalEntities}...`, { duration: 2000 })
 
         // Sync this batch
         try {
-          const batchResults = await mappingApi.syncProducts(batch, mapping, syncMode)
+          const batchResults = await mappingApi.sync(entityType, batch, mapping, syncMode)
           allResults.push(...batchResults.results)
           processedCount += batch.length
 
           // Update results and progress in real-time
           setResults([...allResults])
-          setSyncProgress({ current: processedCount, total: totalArticles })
+          setSyncProgress({ current: processedCount, total: totalEntities })
 
           // Show intermediate progress
           const successCount = allResults.filter(r => r.success).length
           const failCount = allResults.filter(r => !r.success).length
-          console.log(`Progress: ${processedCount}/${totalArticles} | Erfolg: ${successCount} | Fehler: ${failCount}`)
+          console.log(`Progress: ${processedCount}/${totalEntities} | Erfolg: ${successCount} | Fehler: ${failCount}`)
         } catch (error: any) {
           if (controller.signal.aborted) {
             break
@@ -174,11 +177,11 @@ function ProductSync({ mapping }: ProductSyncProps) {
 
       setSyncProgress(null)
 
-      if (finalSuccessCount === totalArticles) {
-        toast.success(`Alle ${totalArticles} Artikel erfolgreich synchronisiert`)
+      if (finalSuccessCount === totalEntities) {
+        toast.success(`Alle ${totalEntities} Einträge erfolgreich synchronisiert`)
       } else {
         toast.error(
-          `${finalSuccessCount} von ${totalArticles} Artikeln synchronisiert (${finalFailCount} Fehler)`
+          `${finalSuccessCount} von ${totalEntities} Einträgen synchronisiert (${finalFailCount} Fehler)`
         )
       }
     } catch (error: any) {
@@ -195,25 +198,25 @@ function ProductSync({ mapping }: ProductSyncProps) {
 
   return (
     <div className="card">
-      <h2>Produkt-Synchronisation</h2>
+      <h2>{config.sw5Label} Synchronisation</h2>
 
       <div className="sync-controls">
         <div style={{ flex: 1 }}>
           <label htmlFor="articleIds" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Shopware 5 Artikel-IDs (komma- oder leerzeichengetrennt):
+            {config.sw5Label} IDs (komma- oder leerzeichengetrennt):
           </label>
           <input
             id="articleIds"
             type="text"
             className="input"
-            placeholder="z.B. 1, 2, 3 oder SW12836, 6641"
+            placeholder="z.B. 1, 2, 3"
             value={articleIds}
             onChange={(e) => setArticleIds(e.target.value)}
             style={{ width: '100%' }}
             disabled={syncing}
           />
           <small style={{ color: '#666', marginTop: '0.25rem', display: 'block' }}>
-            Hinweis: Geben Sie Shopware Artikel-IDs ein (nicht Shopify Produkt-IDs).
+            Hinweis: Geben Sie {config.sw5Label} IDs ein (nicht {config.shopifyLabel} IDs).
             Diese werden nach Shopify exportiert.
           </small>
         </div>
@@ -256,7 +259,7 @@ function ProductSync({ mapping }: ProductSyncProps) {
             onClick={handleSyncAll}
             disabled={syncing}
           >
-            Alle Artikel synchronisieren
+            Alle {config.sw5Label} synchronisieren
           </button>
 
           {syncing && abortController && (
@@ -275,7 +278,7 @@ function ProductSync({ mapping }: ProductSyncProps) {
         <div style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: '#f0f9ff', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
             <strong>Synchronisationsfortschritt</strong>
-            <span>{syncProgress.current} / {syncProgress.total} Artikel ({Math.round((syncProgress.current / syncProgress.total) * 100)}%)</span>
+            <span>{syncProgress.current} / {syncProgress.total} Einträge ({Math.round((syncProgress.current / syncProgress.total) * 100)}%)</span>
           </div>
           <div style={{ width: '100%', height: '24px', backgroundColor: '#e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
             <div
@@ -338,7 +341,7 @@ function ProductSync({ mapping }: ProductSyncProps) {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <div>
-                        <strong>Artikel ID:</strong> {result.sw5_article_id}
+                        <strong>{config.sw5Label} ID:</strong> {result.sw5_article_id}
                       </div>
                       <div>
                         <span
@@ -353,7 +356,7 @@ function ProductSync({ mapping }: ProductSyncProps) {
 
                     {result.shopify_product_id && (
                       <div style={{ marginTop: '0.5rem' }}>
-                        <strong>Shopify Product ID:</strong> {result.shopify_product_id}
+                        <strong>{config.shopifyLabel} ID:</strong> {result.shopify_product_id}
                       </div>
                     )}
 

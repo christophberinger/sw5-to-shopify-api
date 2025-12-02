@@ -49,3 +49,45 @@ export interface SyncResult {
   shopify_product_id?: number
   error?: string
 }
+
+// Entity Types for multi-entity support
+export type EntityType = 'articles' | 'orders' | 'customers'
+
+export interface EntityConfig {
+  type: EntityType
+  sw5Label: string
+  shopifyLabel: string
+  syncModes: ('create' | 'update' | 'upsert')[]
+}
+
+export const ENTITY_CONFIGS: Record<EntityType, EntityConfig> = {
+  articles: {
+    type: 'articles',
+    sw5Label: 'Shopware 5 Artikel',
+    shopifyLabel: 'Shopify Produkte',
+    syncModes: ['create', 'update', 'upsert']
+  },
+  orders: {
+    type: 'orders',
+    sw5Label: 'Shopware 5 Bestellungen',
+    shopifyLabel: 'Shopify Bestellungen',
+    syncModes: ['upsert']  // Read-only
+  },
+  customers: {
+    type: 'customers',
+    sw5Label: 'Shopware 5 Kunden',
+    shopifyLabel: 'Shopify Kunden',
+    syncModes: ['create', 'update', 'upsert']
+  }
+}
+
+// Multi-Entity Mapping Export Format
+export interface MappingExport {
+  version: string
+  exportDate: string
+  mappings: {
+    articles: FieldMapping[]
+    orders: FieldMapping[]
+    customers: FieldMapping[]
+  }
+}

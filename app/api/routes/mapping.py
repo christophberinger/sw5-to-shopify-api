@@ -1,12 +1,20 @@
 from fastapi import APIRouter, HTTPException, Body
 from typing import Dict, List, Any, Union, Optional
 from pydantic import BaseModel
+from enum import Enum
 import json
 from clients.shopware5_client import Shopware5Client
 from clients.shopify_client import ShopifyClient
 from utils.transformations import apply_transformation
 
 router = APIRouter()
+
+
+# Entity Types Enum
+class EntityType(str, Enum):
+    ARTICLES = "articles"
+    ORDERS = "orders"
+    CUSTOMERS = "customers"
 
 
 class TransformationRule(BaseModel):
@@ -32,6 +40,14 @@ class ProductSyncRequest(BaseModel):
     sw5_article_ids: List[Union[int, str]]
     mapping: List[FieldMapping]
     mode: str = "update"  # update, create, or upsert
+
+
+# Generic Entity Sync Request
+class EntitySyncRequest(BaseModel):
+    entity_type: EntityType
+    sw5_ids: List[Union[int, str]]
+    mapping: List[FieldMapping]
+    mode: str = "upsert"  # create, update, or upsert
 
 
 def validate_mapping_for_sync(mappings: List[FieldMapping], mode: str) -> Dict[str, Any]:

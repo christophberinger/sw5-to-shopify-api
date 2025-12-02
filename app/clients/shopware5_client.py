@@ -151,6 +151,129 @@ class Shopware5Client:
 
         return None
 
+    # ==================== CUSTOMER METHODS ====================
+
+    def get_customers(self, limit: int = 100, offset: int = 0) -> Dict:
+        """
+        Get customers from Shopware 5
+        """
+        params = {
+            'limit': limit,
+            'start': offset
+        }
+        return self._make_request('GET', 'customers', params=params)
+
+    def get_customer(self, customer_id: int) -> Dict:
+        """
+        Get single customer by ID
+        """
+        result = self._make_request('GET', f'customers/{customer_id}')
+
+        if result.get('data'):
+            return result['data']
+
+        raise Exception(f"Customer with ID {customer_id} not found in Shopware 5")
+
+    def get_customer_by_email(self, email: str) -> Optional[Dict]:
+        """
+        Get customer by email address
+        Note: SW5 API doesn't support direct email lookup, so we fetch and filter
+        """
+        try:
+            # Fetch customers and search for matching email
+            customers = self.get_customers(limit=100)
+
+            if customers.get('data'):
+                for customer in customers['data']:
+                    if customer.get('email', '').lower() == email.lower():
+                        return customer
+
+            return None
+        except Exception as e:
+            raise Exception(f"Error searching for customer by email: {str(e)}")
+
+    def get_customer_fields(self) -> List[Dict[str, Any]]:
+        """
+        Get all available customer fields from Shopware 5
+        """
+        customers = self.get_customers(limit=10)
+
+        if not customers.get('data') or len(customers['data']) == 0:
+            return []
+
+        all_field_paths = {}
+        for customer in customers['data']:
+            fields = self._extract_fields_from_object(customer, prefix="")
+            for field in fields:
+                if field['path'] not in all_field_paths:
+                    all_field_paths[field['path']] = field
+
+        return list(all_field_paths.values())
+
+    # ==================== ORDER METHODS ====================
+
+    def get_orders(self, limit: int = 100, offset: int = 0, status: str = None) -> Dict:
+        """
+        Get orders from Shopware 5
+        """
+        params = {
+            'limit': limit,
+            'start': offset
+        }
+        if status:
+            params['filter'] = [{'property': 'status', 'value': status}]
+
+        return self._make_request('GET', 'orders', params=params)
+
+    def get_order(self, order_id: int) -> Dict:
+        """
+        Get single order by ID
+        """
+        result = self._make_request('GET', f'orders/{order_id}')
+
+        if result.get('data'):
+            return result['data']
+
+        raise Exception(f"Order with ID {order_id} not found in Shopware 5")
+
+    def get_order_by_number(self, order_number: str) -> Optional[Dict]:
+        """
+        Get order by order number
+        """
+        try:
+            # SW5 API doesn't support useNumberAsId for orders
+            # We need to fetch and filter
+            orders = self.get_orders(limit=100)
+
+            if orders.get('data'):
+                for order in orders['data']:
+                    if order.get('number') == order_number:
+                        return order
+
+            return None
+        except Exception as e:
+            raise Exception(f"Error finding order by number: {str(e)}")
+
+    def get_order_fields(self) -> List[Dict[str, Any]]:
+        """
+        Get all available order fields from Shopware 5
+        """
+        orders = self.get_orders(limit=10)
+
+        if not orders.get('data') or len(orders['data']) == 0:
+            return []
+
+        all_field_paths = {}
+        for order in orders['data']:
+            fields = self._extract_fields_from_object(order, prefix="")
+            for field in fields:
+                if field['path'] not in all_field_paths:
+                    all_field_paths[field['path']] = field
+
+        return list(all_field_paths.values())
+
+    # ==================== CONNECTION TEST ====================
+
     def test_connection(self) -> Dict:
         """
         Test connection to Shopware 5 API
