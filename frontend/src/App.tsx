@@ -66,6 +66,8 @@ function App() {
       </div>
 
       <div className="container">
+        <ConnectionStatus />
+
         {/* Tab Navigation */}
         <div className="tabs">
           <button
@@ -107,8 +109,6 @@ function App() {
             </label>
           </div>
         </div>
-
-        <ConnectionStatus />
 
         <FieldMapper
           entityType={activeEntityType}
